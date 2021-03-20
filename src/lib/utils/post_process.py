@@ -17,11 +17,15 @@ def ctdet_post_process(dets, c, s, h, w, num_classes):
     dets[i, :, 2:4] = transform_preds(
           dets[i, :, 2:4], c[i], s[i], (w, h))
     classes = dets[i, :, -1]
+    inds_classes = {}
+
     for j in range(num_classes):
       inds = (classes == j)
       top_preds[j + 1] = np.concatenate([
         dets[i, inds, :4].astype(np.float32),
         dets[i, inds, 4:5].astype(np.float32)], axis=1).tolist()
+
+      inds_classes[j] = inds
     ret.append(top_preds)
-  return ret
+  return ret, inds_classes
 
