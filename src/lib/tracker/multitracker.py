@@ -20,7 +20,7 @@ from .basetrack import BaseTrack, TrackState
 from utils.post_process import ctdet_post_process
 from utils.image import get_affine_transform
 from models.utils import _tranpose_and_gather_feat
-
+from itertools import compress
 
 class STrack(BaseTrack):
     shared_kalman = KalmanFilter()
@@ -202,12 +202,12 @@ class JDETracker(object):
     def post_process(self, dets, meta):
         dets = dets.detach().cpu().numpy()
         dets = dets.reshape(1, -1, dets.shape[2])
-        dets = ctdet_post_process(
+        dets, inds_classes = ctdet_post_process(
             dets.copy(), [meta['c']], [meta['s']],
             meta['out_height'], meta['out_width'], self.opt.num_classes)
         for j in range(1, self.opt.num_classes + 1):
             dets[0][j] = np.array(dets[0][j], dtype=np.float32).reshape(-1, 5)
-        return dets[0]
+        return dets[0], inds_classes
 
     def merge_outputs(self, detections):
         results = {}
@@ -252,16 +252,24 @@ class JDETracker(object):
 
             reg = output['reg'] if self.opt.reg_offset else None
             dets, inds = mot_decode(hm, wh, reg=reg, ltrb=self.opt.ltrb, K=self.opt.K)
+
             id_feature = _tranpose_and_gather_feat(id_feature, inds)
             id_feature = id_feature.squeeze(0)
             id_feature = id_feature.cpu().numpy()
-
-        dets = self.post_process(dets, meta)
+        
+        dets, inds_classes = self.post_process(dets, meta)
         dets = self.merge_outputs([dets])[1]
-
+        
+        id_feature_class = {}
+        
+        for i in range(1, self.opt.num_classes+1):
+            id_feature_class[i] = np.array(list(compress(id_feature, inds_classes[i-1])))
+        
+        ## Only use the first class
         remain_inds = dets[:, 4] > self.opt.conf_thres
         dets = dets[remain_inds]
-        id_feature = id_feature[remain_inds]
+
+        id_feature = id_feature_class[1][remain_inds]
 
         # vis
         '''
